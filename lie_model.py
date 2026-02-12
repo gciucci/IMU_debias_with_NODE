@@ -117,13 +117,13 @@ class LieModel(nn.Module):
         ba = y[..., 13:16]
 
         # 3. Fisica del sistema
-        # Derivata orientamento (usando Lie)
+        # Derivata orientamento (usando Lie algebra)
         # xi_dot = JacoInv * (misura_w - bias_w)
-        xi_dot = torch.matmul(Lie.SO3rightJacoInv(y[..., :3]), w_tilde - bw)
+        xi_dot = torch.matmul(Lie.SO3rightJacoInv(y[..., :3]), (w_tilde - bw).unsqueeze(-1)).squeeze(-1)
         
         # Calcolo Rotazione attuale e derivata velocità
         Rt = self.R0 @ Lie.SO3exp(y[..., :3])
-        v_dot = torch.matmul(Rt, a_tilde - ba) + self.g_const
+        v_dot = torch.matmul(Rt, (a_tilde - ba).unsqueeze(-1)).squeeze(-1) + self.g_const
         
         # Derivata posizione = velocità
         p_dot = y[..., 7:10]

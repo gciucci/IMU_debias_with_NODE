@@ -67,19 +67,14 @@ class ba_func_net(nn.Module):
         x = self.net2(x) + x
         return self.linear2(x)
     
-class LieModel(nn.Module):
-    def __init__(self, u_func, u_dot_func, bias_net_w, bias_net_a, device="cuda"):
+class LieModel(torch.nn.Module):
+    def __init__(self, bias_net_w=None, bias_net_a=None, device="cuda"):
         super().__init__()
 
-        # Funzioni per leggere i dati IMU
-        self.u_func = u_func
-        self.u_dot_func = u_dot_func
-        
-        # Reti neurali per i bias
+        self.u_func = None
+        self.u_dot_func = None
         self.bias_net_w = bias_net_w
         self.bias_net_a = bias_net_a
-        
-        # Costanti fisiche
         self.device = device
         self.g_const = torch.tensor([0, 0, -9.81]).to(device)
         self.R0 = torch.eye(3).to(device)
@@ -88,13 +83,10 @@ class LieModel(nn.Module):
         self.R0 = R0.clone().to(self.device)
 
     def callback_change_chart(self, y):
-        """Aggiorna R0 in base alla posizione attuale"""
-        # Estrai orientamento attuale
         xi = y[..., :3]
-        # Calcola nuova R0
-        self.set_R0(self.R0 @ Lie.SO3exp(xi))
+        self.set_R0(self.R0 @ Lie.SO3exp(xi)) #aggiornamento R0
         y_new = y.clone()
-        y_new[..., :3] = 0
+        y_new[..., :3] = 0 #xi inizializzate a 0
         return y_new
 
     def __call__(self, t, y):
@@ -111,25 +103,27 @@ class LieModel(nn.Module):
         a_tilde = imu_meas[..., 3:] # Accelerometro
 
         # 2. Calcolo dei Bias tramite Reti Neurali
-        bw_dot = self.bias_net_w(y, imu_meas, imu_meas_dot, self.R0)
-        ba_dot = self.bias_net_a(y, imu_meas, imu_meas_dot, self.R0)
+        bw_dot = (
+            self.bias_net_w(y, imu_meas, imu_meas_dot, self.R0)
+            if self.bias_net_w is not None
+            else torch.zeros_like(y[..., 4:7])
+        )
+
+        ba_dot = (
+            self.bias_net_a(y, imu_meas, imu_meas_dot, self.R0)
+            if self.bias_net_a is not None
+            else torch.zeros_like(y[..., 13:16])
+        )
         bw = y[..., 4:7]
         ba = y[..., 13:16]
 
         # 3. Fisica del sistema
-        # Derivata orientamento (usando Lie algebra)
-        # xi_dot = JacoInv * (misura_w - bias_w)
         xi_dot = torch.matmul(Lie.SO3rightJacoInv(y[..., :3]), (w_tilde - bw).unsqueeze(-1)).squeeze(-1)
-        
-        # Calcolo Rotazione attuale e derivata velocità
         Rt = self.R0 @ Lie.SO3exp(y[..., :3])
         v_dot = torch.matmul(Rt, (a_tilde - ba).unsqueeze(-1)).squeeze(-1) + self.g_const
-        
-        # Derivata posizione = velocità
         p_dot = y[..., 7:10]
         
-        # Derivata del tempo (scorre sempre a 1)
-        t_dot = torch.ones_like(t_abs).unsqueeze(-1)
+        t_dot = torch.ones_like(t_abs).unsqueeze(-1) # Derivata del tempo (scorre sempre a 1)
 
         # Uniamo tutto
         return torch.cat([xi_dot, t_dot, bw_dot, v_dot, p_dot, ba_dot], dim=-1)

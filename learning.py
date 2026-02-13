@@ -57,7 +57,7 @@ def Gyro_train(dataset_train: BaseDataset, dataset_val: BaseDataset, output_dir:
     mask_flag = MASKFLAG[dataset_train.dataset_name]
 
     bw_net = bw_func_net().to(device)
-    model = LieModel(biasfunc_w=bw_net,device=device).to(device)
+    model = LieModel(bias_net_w=bw_net,device=device).to(device)
     optimizer = torch.optim.Adam(model.bias_net_w.parameters(), lr=lr, weight_decay=weight_decay)
 
     writer = SummaryWriter(os.path.join(output_dir, "logs_gyro"))
@@ -93,8 +93,7 @@ def Acc_train(dataset_train: EUROCDataset, dataset_val: EUROCDataset, outpur_dir
     MASKFLAG = {"EUROC": False, "TUM": True, "Fetch": False} # whether to mask some missing data
     mask_flag = MASKFLAG[dataset_train.dataset_name]
     ba_net = ba_func_net().to(device)
-    model = LieModel(biasfunc_w=ba_net,device=device).to(device)
-    model.bias_net_w.load_state_dict(bw_model.state_dict())
+    model = LieModel(bias_net_w=bw_model,bias_net_a=ba_net,device=device).to(device)
     optimizer = torch.optim.Adam(model.bias_net_a.parameters(), lr=lr, weight_decay=weight_decay)  
     writer = SummaryWriter(os.path.join(outpur_dir, "logs_acc"))
 
@@ -108,7 +107,7 @@ def Acc_train(dataset_train: EUROCDataset, dataset_val: EUROCDataset, outpur_dir
         Spline = Interpolation.CubicHermiteSpline(Spline_time, coeff, device=device)
         model.u_func, model.u_dot_func = Spline.evaluate, Spline.derivative
         sol,_ = odeint_SO3(model, y0_batch, R0_batch, t_odeint, rtol=1e-7, atol=1e-9, method=integral_method)
-        loss = torch.nn.MSELoss()(sol[..., :3, 3], X_gt_batch[..., :3, 3])
+        loss = 1e6 * torch.nn.MSELoss()(sol[...,7:13], torch.cat([X_gt_batch[...,:3,3], X_gt_batch[...,:3,4]], dim=-1))
         loss.backward()
         optimizer.step()
 

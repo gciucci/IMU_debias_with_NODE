@@ -1,42 +1,98 @@
 import torch
-import os
-import argparse
 import time
+import os
 
-import Interpolation as Interpolation
-from lie_model import LieModel, bw_func_net, ba_func_net
-from dataset import BaseDataset, EUROCDataset
-from learning import write_parameters, Gyro_train, Acc_train
-from Test import Test
+from dataset import EUROCDataset
+from learning import Gyro_train, Acc_train
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Training e Testing del modello LieModel su EUROC")
-    parser.add_argument('--data_dir', type=str, default='data', help='Directory dei dati')
-    parser.add_argument('--output_dir', type=str, default='output', help='Directory per salvare modelli e risultati')
-    parser.add_argument('--bw_weights_path', type=str, default='output/bw_weights.pth', help='Percorso per i pesi della rete bias giroscopio')
-    parser.add_argument('--ba_weights_path', type=str, default='output/ba_weights.pth', help='Percorso per i pesi della rete bias accelerometro')
-    parser.add_argument('--device', type=str, default='cuda', help='Dispositivo da utilizzare (cuda o cpu)')
-    args = parser.parse_args()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    output_dir = "results/euroc_simplified"
+    os.makedirs(output_dir, exist_ok=True)
 
-    # 1. Caricamento Dataset
-    dataset_test = EUROCDataset(args.data_dir, mode="test", percent_for_val=0.2, batch_size=1, loss_window=10, dt=0.01)
+    integral_method = "euler"
+    epoch = 1801
 
-    # 2. Training
-    # chiamare Gyro_train e Acc_train
+    lr_gyro = 5e-3
+    wd_gyro = 1e-6
+    lr_acc = 5e-3
+    wd_acc = 1e-6
+
+    print("=== EUROC Bias Learning ===")
+    print("Device:", device)
+
+    # -------------------------
+    # Dataset
+    # -------------------------
+    dataset_params = dict(
+        dataset_name="EUROC",
+        data_dir="data/EUROC",
+        data_cache_dir="data/EUROC",
+        train_seqs=[
+            "MH_01_easy",
+            "MH_03_medium",
+            "MH_05_difficult",
+            "V1_02_medium",
+            "V2_01_easy",
+            "V2_03_difficult",
+        ],
+        val_seqs=[
+            "MH_01_easy",
+            "MH_03_medium",
+            "MH_05_difficult",
+            "V1_02_medium",
+            "V2_01_easy",
+            "V2_03_difficult",
+        ],
+        dt=0.005,
+        percent_for_val=0.2,
+        loss_window=16,
+        batch_size=1000,
+        sg_window_bw=1,
+        sg_order_bw=0,
+        sg_window_ba=1,
+        sg_order_ba=0,
+    )
+
+    dataset_train = EUROCDataset(**dataset_params, mode="train", recompute=False)
+    dataset_val = EUROCDataset(**dataset_params, mode="val")
+
+    # -------------------------
+    # Training
+    # -------------------------
     t_start = time.time()
-    Gyro_train(dataset_train=dataset_test, dataset_val=dataset_test, output_dir=args.output_dir, bw_func_name="bw_func_net", integral_method="euler", device=args.device, lr=0.005, weight_decay=1e-6, epoch=1801)
-    # con i pesi salvati per gyro addestriamo anche acc
-    ba_func_name = "ba_func_net"
-    ba_func = ba_func_net().to(args.device)
-    ba_func.load_state_dict(torch.load(args.ba_weights_path, map_location=args.device))
-    Acc_train(dataset_train=dataset_test, dataset_val=dataset_test, output_dir=args.output_dir, ba_func_name=ba_func_name, integral_method="euler", device=args.device, lr=0.005, weight_decay=1e-6, epoch=1801)
-    t_end = time.time()
-    print(f">>> Training completato in {(t_end - t_start)/60:.2f} minuti")
 
-    # 3. Testing
-    Test(dataset_test=dataset_test, output_dir=args.output_dir, bw_weights_path=args.bw_weights_path, ba_weights_path=args.ba_weights_path, device=args.device)
+    print("\n--- Training Gyro Bias ---")
+    bw_net = Gyro_train(
+        dataset_train=dataset_train,
+        dataset_val=dataset_val,
+        output_dir=output_dir,
+        bw_func_name="bw_func_net",
+        integral_method=integral_method,
+        device=device,
+        lr=lr_gyro,
+        weight_decay=wd_gyro,
+        epoch=epoch,
+    )
+
+    print("\n--- Training Acc Bias ---")
+    ba_net = Acc_train(
+        dataset_train=dataset_train,
+        dataset_val=dataset_val,
+        outpur_dir=output_dir,
+        bw_model=bw_net,
+        ba_model_name="ba_func_net",
+        integral_method=integral_method,
+        device=device,
+        lr=lr_acc,
+        weight_decay=wd_acc,
+        epoch=epoch,
+    )
+
+    t_end = time.time()
+    print(f"\nTraining finished in {t_end - t_start:.1f} seconds")
 
 
 if __name__ == "__main__":
     main()
-    

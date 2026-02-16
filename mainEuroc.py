@@ -1,97 +1,80 @@
 import torch
 import time
-import os
-
-from dataset import EUROCDataset
+import Interpolation as Interpolation
 from learning import Gyro_train, Acc_train
-
-
+from Test import test_gyro, test_acc
+from dataset import EUROCDataset
+from lie_model import bw_func_net, ba_func_net
 def main():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    output_dir = "results/euroc_simplified"
-    os.makedirs(output_dir, exist_ok=True)
-
-    integral_method = "euler"
-    epoch = 1801
-
-    lr_gyro = 5e-3
-    wd_gyro = 1e-6
-    lr_acc = 5e-3
-    wd_acc = 1e-6
-
-    print("=== EUROC Bias Learning ===")
-    print("Device:", device)
-
-    # -------------------------
-    # Dataset
-    # -------------------------
-    dataset_params = dict(
-        dataset_name="EUROC",
-        data_dir="data/EUROC",
-        data_cache_dir="data/EUROC",
-        train_seqs=[
-            "MH_01_easy",
-            "MH_03_medium",
-            "MH_05_difficult",
-            "V1_02_medium",
-            "V2_01_easy",
-            "V2_03_difficult",
+    dataset_parameters = {
+        'dataset_name': 'EUROC',
+        'data_dir': 'data/EUROC', # where are dataset located
+        'data_cache_dir': 'data/EUROC', # where to save the preprocessed data
+        'train_seqs': [
+            'MH_01_easy',
+            'MH_03_medium',
+            'MH_05_difficult',
+            'V1_02_medium',
+            'V2_01_easy',
+            'V2_03_difficult'
         ],
-        val_seqs=[
-            "MH_01_easy",
-            "MH_03_medium",
-            "MH_05_difficult",
-            "V1_02_medium",
-            "V2_01_easy",
-            "V2_03_difficult",
+        'val_seqs': [
+            'MH_01_easy',
+            'MH_03_medium',
+            'MH_05_difficult',
+            'V1_02_medium',
+            'V2_01_easy',
+            'V2_03_difficult'
         ],
-        dt=0.005,
-        percent_for_val=0.2,
-        loss_window=16,
-        batch_size=1000,
-        sg_window_bw=1,
-        sg_order_bw=0,
-        sg_window_ba=1,
-        sg_order_ba=0,
-    )
+        'test_seqs': [
+            'MH_02_easy',
+            'MH_04_difficult',
+            'V2_02_medium',
+            'V1_03_difficult',
+            'V1_01_easy'
+        ],
+        # time_for_train: 50.0 # 
+        'dt': 0.005, # time step
+        'percent_for_val': 0.2, # the last 0.2 of the data is used for validation for each sequence
+        'loss_window': 16, # size of the loss window CDE-RNN
+        'batch_size': 1000, # number of time windows in each batch
+        'sg_window_bw': 1,
+        'sg_order_bw': 0,
+        'sg_window_ba': 1,
+        'sg_order_ba': 0,
+        }
+    dataset_train = EUROCDataset(**dataset_parameters, mode='train',recompute=False)
+    dataset_val = EUROCDataset(**dataset_parameters, mode='val')
+    dataset_test = EUROCDataset(**dataset_parameters, mode='test')
 
-    dataset_train = EUROCDataset(**dataset_params, mode="train", recompute=False)
-    dataset_val = EUROCDataset(**dataset_params, mode="val")
+    #Gyro train
+    Gyro_train(dataset_train, dataset_val, "results/Euroc_master")
+    #Acc train
+    Acc_train(dataset_train, dataset_train,"results/Euroc_master")
 
-    # -------------------------
-    # Training
-    # -------------------------
-    t_start = time.time()
+    #test
+    test_gyro(dataset_test,"{output_dir}/final_model.pt")
+    test_acc(dataset_test,"{output_dir}/final_model.pt")
 
-    print("\n--- Training Gyro Bias ---")
-    bw_net = Gyro_train(
-        dataset_train=dataset_train,
-        dataset_val=dataset_val,
-        output_dir=output_dir,
-        bw_func_name="bw_func_net",
-        integral_method=integral_method,
-        device=device,
-        lr=lr_gyro,
-        weight_decay=wd_gyro,
-        epoch=epoch,
-    )
 
-    print("\n--- Training Acc Bias ---")
-    ba_net = Acc_train(
-        dataset_train=dataset_train,
-        dataset_val=dataset_val,
-        outpur_dir=output_dir,
-        bw_model=bw_net,
-        ba_model_name="ba_func_net",
-        integral_method=integral_method,
-        device=device,
-        lr=lr_acc,
-        weight_decay=wd_acc,
-        epoch=epoch,
-    )
 
-    t_end = time.time()
-    print(f"\nTraining finished in {t_end - t_start:.1f} seconds")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 if __name__ == "__main__":

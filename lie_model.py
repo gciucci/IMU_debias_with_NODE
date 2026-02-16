@@ -119,8 +119,8 @@ class LieModel(torch.nn.Module):
 
         # 3. Fisica del sistema
         xi_dot = torch.matmul(Lie.SO3rightJacoInv(y[..., :3]), (w_tilde - bw).unsqueeze(-1)).squeeze(-1)
-        Rt = self.R0 @ Lie.SO3exp(y[..., :3])
-        v_dot = torch.matmul(Rt, (a_tilde - ba).unsqueeze(-1)).squeeze(-1) + self.g_const
+        Rt = self.R0.to(y.device) @ Lie.SO3exp(y[..., :3])
+        v_dot = torch.matmul(Rt, (a_tilde - ba).unsqueeze(-1)).squeeze(-1) + self.g_const.to(y.device)
         p_dot = y[..., 7:10]
         
         t_dot = torch.ones_like(t_abs).unsqueeze(-1) # Derivata del tempo (scorre sempre a 1)

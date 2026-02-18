@@ -2,10 +2,13 @@ import torch
 import time
 import Interpolation as Interpolation
 from learning import Gyro_train, Acc_train
-from Test import test_gyro, test_acc
+from Test import test
 from dataset import EUROCDataset
 from lie_model import bw_func_net, ba_func_net
 def main():
+    output_dir_gyro = "results/Euroc_master/gyro"
+    output_dir_acc = "results/Euroc_master/acc"
+    device = "cuda"
     dataset_parameters = {
         'dataset_name': 'EUROC',
         'data_dir': 'data/EUROC', # where are dataset located
@@ -48,34 +51,15 @@ def main():
     dataset_test = EUROCDataset(**dataset_parameters, mode='test')
 
     #Gyro train
-    Gyro_train(dataset_train, dataset_val, "results/Euroc_master")
+    Gyro_train(dataset_train, dataset_val, output_dir_gyro)
     #Acc train
-    Acc_train(dataset_train, dataset_train,"results/Euroc_master")
+    Acc_train(dataset_train, dataset_train, output_dir_acc)
 
     #test
-    test_gyro(dataset_test,"{output_dir}/final_model.pt")
-    test_acc(dataset_test,"{output_dir}/final_model.pt")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-if __name__ == "__main__":
-    main()
+    gyro_model_path = f"{output_dir_gyro}/final_model.pt"
+    acc_model_path = f"{output_dir_acc}/final_model.pt"
+    bw_func = bw_func_net().to(device)
+    bw_func.load_state_dict(torch.load(gyro_model_path, weights_only=True)['func_bw_model'])
+    ba_func = ba_func_net().to(device)
+    ba_func.load_state_dict(torch.load(acc_model_path, weights_only=True)['func_ba_model'])
+    test(dataset_test, device=device, integral_method="euler", bw_func=bw_func, ba_func=ba_func)
